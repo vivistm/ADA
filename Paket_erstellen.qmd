@@ -1,0 +1,44 @@
+---
+title: "Paket_erstellen"
+author: "Vivian Stehmans"
+format: html
+editor: visual
+---
+
+```{r}
+
+# Input: Datensatz
+# - Y
+# - Kovariablen (Integer) (mehr als Y und id)
+# - id Variable
+
+algorithmus <- function(datensatz){
+  
+  checking_inputs(datensatz)
+  # unabhängige Variable Y im Datensatz
+  # eine id Variable
+  # integer Kovariate mit p>0
+  
+  cv_datensatz <- aufteilen_daten
+  
+  
+  final_parameter <- trainings_algorithmus(cv_datensatz, tuning_parameter_grid)
+  # tuning_parameter_grid
+  # final parameter = iter_final, final_tuning_parameter, modelle
+  
+  final_model <- finales_model(datensatz, )
+  
+  
+  
+  
+}
+
+checking_inputs <- function(datensatz){
+  
+}
+
+
+  
+
+
+```
