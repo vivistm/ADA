@@ -42,3 +42,77 @@ checking_inputs <- function(datensatz){
 
 
 ```
+
+# Pakete laden
+```{r}
+pacman::p_load("tidyverse","caret")
+
+pacman::p_load(
+  SAEforest, emdi, saeSim, ggplot2, tidyr, saeTrafo,
+  dplyr, sae, furrr, rbenchmark, doParallel,
+  foreach, randomForest, future.apply
+)
+```
+
+# Daten generieren
+```{r}
+
+set.seed(100)
+
+# Parameter
+Domains <- 50
+pop_size <- rep(100, Domains)
+
+# Hilfsfunktionen: Integer-Kovariablen und Fehlerterm
+gen_X1Int <- function(dat, m = dat$muD, s = 4) {
+  dat[["X1"]] <- as.integer(round(rnorm(nrow(dat), mean = m, sd = s)))
+  return(dat)
+}
+
+gen_X2Int <- function(dat, m = dat$muD, s = 2) {
+  dat[["X2"]] <- as.integer(round(rnorm(nrow(dat), mean = m, sd = s)))
+  return(dat)
+}
+
+gen_myE <- function(dat, m = 0, s = 1000) {
+  dat[["e"]] <- rnorm(nrow(dat), mean = m, sd = s)
+  return(dat)
+}
+
+# Aufbau der Population
+setup <- sim_base(data = base_id(nDomains = Domains, nUnits = pop_size)) %>%
+  sim_gen(gen_generic(runif, min = -1, max = 1, groupVars = "idD", name = "muD")) %>%
+  sim_gen(gen_X1Int) %>%
+  sim_gen(gen_X2Int) %>%
+  sim_gen(generator = gen_myE) %>%
+  sim_gen_v(mean = 0, sd = 500) %>%
+  sim_resp_eq(Y = 15000 - 500 * X1 - 500 * X2 + v + e)
+
+# Eine Population erzeugen
+Pop <- sim(setup, R = 1)[[1]]
+
+# Spalte 'idD' in 'id' umbenennen
+names(Pop)[names(Pop) == "idD"] <- "id"
+
+# Negative Einkommen auf 0 setzen
+Pop$Y[Pop$Y < 0] <- 0
+
+# Nur relevante Spalten
+Pop <- Pop[, c("id", "X1", "X2", "Y")]
+
+
+```
+
+
+
+```{r}
+cv_Pop <- caret::createFolds(Pop$Y, k = 5)
+
+parameter_grid <- data.frame("colsample"= c(0.6,1),
+                             "subsample"= c(0.7,1))
+
+ziehen_stichprobe <- function(data,parameter_grid){
+  
+}
+
+```
