@@ -44,6 +44,7 @@ checking_inputs <- function(datensatz){
 ```
 
 # Pakete laden
+
 ```{r}
 pacman::p_load("tidyverse","caret")
 
@@ -55,6 +56,7 @@ pacman::p_load(
 ```
 
 # Daten generieren
+
 ```{r}
 
 set.seed(100)
@@ -104,15 +106,128 @@ Pop <- Pop[, c("id", "X1", "X2", "Y")]
 ```
 
 
+```{r}
+set.seed(123)
+
+# Parameter
+n_groups <- 40       # Anzahl Gruppen
+n_per_group <- 15    # Beobachtungen pro Gruppe
+n_total <- n_groups * n_per_group
+p <- 10              # Anzahl integer-Kovariaten
+
+# ID-Variable
+id <- rep(1:n_groups, each = n_per_group)
+
+# Integer-Kovariaten (X1 bis X10), alle zufällig aus diskreten Verteilungen
+X1 <- sample(1:10, n_total, replace = TRUE)
+X2 <- sample(0:20, n_total, replace = TRUE)
+X3 <- sample(1:5, n_total, replace = TRUE)
+X4 <- rpois(n_total, lambda = 4)
+X5 <- rbinom(n_total, size = 1, prob = 0.5)
+X6 <- sample(10:30, n_total, replace = TRUE)
+X7 <- sample(-10:10, n_total, replace = TRUE)
+X8 <- sample(0:3, n_total, replace = TRUE)
+X9 <- rpois(n_total, lambda = 2)
+X10 <- sample(1:100, n_total, replace = TRUE)
+
+# Gruppenspezifischer zufälliger Intercept
+group_effect <- rnorm(n_groups, mean = 0, sd = 3)
+random_intercepts <- group_effect[id]
+
+# Zielvariable Y mit linearer + nichtlinearer + Interaktion + Random Intercept + Fehler
+Y <- 5 +
+  2*X1 -
+  1*X2 +
+  0.5*X3^2 -
+  0.8*X4 +
+  3*X5 +
+  0.2*X6 +
+  1.5*X7 +
+  2*X8 +
+  0.5*X9 +
+  0.01*X10 +
+  random_intercepts +
+  rnorm(n_total, sd = 5)
+
+# Alles in Data Frame
+sim_data <- data.frame(
+  id = as.factor(id),
+  X1 = as.integer(X1),
+  X2 = as.integer(X2),
+  X3 = as.integer(X3),
+  X4 = as.integer(X4),
+  X5 = as.integer(X5),
+  X6 = as.integer(X6),
+  X7 = as.integer(X7),
+  X8 = as.integer(X8),
+  X9 = as.integer(X9),
+  X10 = as.integer(X10),
+  Y = Y
+)
+
+# Vorschau
+head(sim_data)
+
+```
 
 ```{r}
-cv_Pop <- caret::createFolds(Pop$Y, k = 5)
+cv_Pop <- caret::createFolds(sim_data$Y, k = 5)
 
 parameter_grid <- data.frame("colsample"= c(0.6,1),
                              "subsample"= c(0.7,1))
 
-ziehen_stichprobe <- function(data,parameter_grid){
-  
+
+cv_stichprobe <- NULL
+for(i in 1:5){
+  cv_stichprobe[[i]] <- ziehen_stichprobe(sim_data[cv_Pop[[i]],])
 }
+
+ziehen_stichprobe <- function(data){
+  size_row <- nrow(data)*0.7
+  size_col <- ncol(data)*0.6
+  sample_row <- sample(nrow(data), size = size_row, replace = FALSE)
+  sample_col <- sample(ncol(data), size = size_col, replace = FALSE)
+  
+  stichprobe <- list()
+  stichprobe$data_7_1 <- list(
+    data = data[sample_row, ],
+    subsample = 0.7,
+    colsample = 1.0
+  )
+
+  stichprobe$data_1_1 <- list(
+    data = data,
+    subsample = 1.0,
+    colsample = 1.0
+  )
+
+  stichprobe$data_1_6 <- list(
+    data = data[, sample_col],
+    subsample = 1.0,
+    colsample = 0.6
+  )
+
+  stichprobe$data_7_6 <- list(
+    data = data[sample_row, sample_col],
+    subsample = 0.7,
+    colsample = 0.6
+  )
+
+  stichprobe
+}
+  
+
+
+
+#Berechne den negativen Gradienten der quadratischen Verlust-
+#funktion gegeben durch: giter = Y − ˆfiter−
+
+berechne_neg_grad <- function(data){
+  neg_grad <- data$Y-mean(data$Y)
+  neg_grad
+  }
+
+
+berechne_neg_grad(cv_stichprobe[[1]]$data_1_1$data)
 
 ```
