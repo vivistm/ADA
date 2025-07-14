@@ -51,7 +51,7 @@ pacman::p_load("tidyverse","caret")
 pacman::p_load(
   SAEforest, emdi, saeSim, ggplot2, tidyr, saeTrafo,
   dplyr, sae, furrr, rbenchmark, doParallel,
-  foreach, randomForest, future.apply
+  foreach, randomForest, future.apply, lme4
 )
 ```
 
@@ -131,7 +131,7 @@ X9 <- rpois(n_total, lambda = 2)
 X10 <- sample(1:100, n_total, replace = TRUE)
 
 # Gruppenspezifischer zufälliger Intercept
-group_effect <- rnorm(n_groups, mean = 0, sd = 3)
+group_effect <- rnorm(n_groups, mean = 6, sd = 3)
 random_intercepts <- group_effect[id]
 
 # Zielvariable Y mit linearer + nichtlinearer + Interaktion + Random Intercept + Fehler
@@ -228,6 +228,27 @@ berechne_neg_grad <- function(data){
   }
 
 
-berechne_neg_grad(cv_stichprobe[[1]]$data_1_1$data)
+cv_stichprobe[[1]]$data_1_1$data$neg_grad <- berechne_neg_grad(cv_stichprobe[[1]]$data_1_1$data)
+
+schaetze_cart <- function(data){
+  rpart::rpart(neg_grad~.,data %>%
+  dplyr::select(-Y))}
+
+cart_1 <- schaetze_cart(cv_stichprobe[[1]]$data_1_1$data)
+
+berechne_temp_residuen <- function(data, cart){
+  data$pred <- predict(cart)
+  data$temp_res <- data$Y - data$pred
+  data
+}
+
+cv_stichprobe[[1]]$data_1_1$data$pred <- predict(cart_1)
+
+
+data_temp_res<- berechne_temp_residuen(cv_stichprobe[[1]]$data_1_1$data, cart_1)
+
+lmer(formula = temp_res ~ 1 + (1|id), data = data_temp_res%>%
+  dplyr::select(-Y, -neg_grad, -pred))
+
 
 ```
