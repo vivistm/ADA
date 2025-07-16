@@ -111,7 +111,7 @@ set.seed(123)
 
 # Parameter
 n_groups <- 40       # Anzahl Gruppen
-n_per_group <- 15    # Beobachtungen pro Gruppe
+n_per_group <- 100    # Beobachtungen pro Gruppe
 n_total <- n_groups * n_per_group
 p <- 10              # Anzahl integer-Kovariaten
 
@@ -171,6 +171,54 @@ head(sim_data)
 ```
 
 ```{r}
+
+boostedrirt <- function(data){
+  
+  #checking_inputs()
+  
+  # Erzeuge 5 - CV Daten
+  cv_data <- caret::createFolds(data$Y, k = 5)
+  # Ziehe für alle CV Folds Stichproben
+  train_data <- NULL
+  test_data <- NULL
+  cv_stichprobe <- NULL
+  for(i in 1:5){
+    train_data[[i]] <- data[-cv_data[[i]], ]
+    test_data[[i]] <- data[cv_data[[i]],]
+    cv_stichprobe[[i]] <- ziehen_stichprobe(train_data[[i]])
+    for(para_option in 1:4){
+    para_data<- cv_stichprobe[[i]][[1]]$data
+    # para_data sind die Daten die unseren colsample und subsample entsprechen
+    f_iter <- mean(para_data$Y) # Startwert
+    itermax <- 100
+    improv_count <- 0
+    while(iter <= itermax && improv_count < 5){
+    para_data$neg_grad <- berechne_neg_grad(para_data,f_iter)
+    cart_modell <- schaetze_cart(para_data)
+    para_data$temp_res<- berechne_temp_residuen(para_data,cart_modell)
+    lmm_modell<- schaetze_lmm(para_data)
+    para_data$f_iter_act <- berechne_aktuelle_vorhersage(para_data,lmm_modell,f_iter)
+    rmse <- berechne_rmse(para_data)
+    iter <- iter+1
+    }
+    
+    }
+    
+  }
+  cv_stichprobe
+  
+  
+  
+  
+}
+
+cv_stichprobe[[1]][1]
+
+#-------------
+
+boostedrirt(sim_data)
+
+
 cv_Pop <- caret::createFolds(sim_data$Y, k = 5)
 
 parameter_grid <- data.frame("colsample"= c(0.6,1),
@@ -222,24 +270,27 @@ ziehen_stichprobe <- function(data){
 #Berechne den negativen Gradienten der quadratischen Verlust-
 #funktion gegeben durch: giter = Y − ˆfiter−
 
-berechne_neg_grad <- function(data){
-  neg_grad <- data$Y-mean(data$Y)
+f_iter <- mean(cv_stichprobe[[1]]$data_1_1$data$Y)
+
+berechne_neg_grad <- function(data, f_iter){
+  neg_grad <- data$Y-f_iter
   neg_grad
   }
 
 
-cv_stichprobe[[1]]$data_1_1$data$neg_grad <- berechne_neg_grad(cv_stichprobe[[1]]$data_1_1$data)
+
+cv_stichprobe[[1]]$data_1_1$data$neg_grad <- berechne_neg_grad(cv_stichprobe[[1]]$data_1_1$data, f_iter)
 
 schaetze_cart <- function(data){
   rpart::rpart(neg_grad~.,data %>%
-  dplyr::select(-Y))}
+  dplyr::select(-Y,-id))}
 
 cart_1 <- schaetze_cart(cv_stichprobe[[1]]$data_1_1$data)
 
 berechne_temp_residuen <- function(data, cart){
   data$pred <- predict(cart)
-  data$temp_res <- data$Y - data$pred
-  data
+  temp_res <- data$Y - data$pred
+  temp_res
 }
 
 cv_stichprobe[[1]]$data_1_1$data$pred <- predict(cart_1)
@@ -250,5 +301,32 @@ data_temp_res<- berechne_temp_residuen(cv_stichprobe[[1]]$data_1_1$data, cart_1)
 lmer(formula = temp_res ~ 1 + (1|id), data = data_temp_res%>%
   dplyr::select(-Y, -neg_grad, -pred))
 
+schaetze_lmm <- function(data){
+  lmer(formula = temp_res ~ 1 + (1|id), data = data%>%
+  dplyr::select(-Y, -neg_grad, -pred))
+}
+
+lmm_iter <- schaetze_lmm(data_temp_res)
+
+berechne_aktuelle_vorhersage <- function(data,lmm_model, f_iter, alpha = 0.1){
+  random_eff_id<- ranef(lmm_model)$id
+  beta0<- fixef(lmm_model)[1]
+  data$f_lmm_id<- random_eff_id[as.character(data$id),]
+  f_iter_act <- f_iter+ alpha *(data$pred - beta0+ data$f_lmm_id)
+}
+
+data_f_iter <- berechne_aktuelle_vorhersage(data_temp_res,lmm_iter,f_iter)
+
+berechne_rmse <- function(data){
+  rmse <- sqrt(1/nrow(data)*sum((data$f_iter_act -data$Y)^2))
+  rmse
+}
+
+rmse<- berechne_rmse(data_f_iter)
+
+
+
+
+cv_stichprobe[[1]][[1]]$data
 
 ```
