@@ -172,8 +172,8 @@ head(sim_data)
 
 ```{r}
 
-boostedrirt <- function(data){
-  
+
+boostedrirt <- function(data) {
   #checking_inputs()
   
   # Erzeuge 5 - CV Daten
@@ -182,37 +182,39 @@ boostedrirt <- function(data){
   train_data <- NULL
   test_data <- NULL
   cv_stichprobe <- NULL
-  for(i in 1:5){
+  for (i in 1:5) {
     train_data[[i]] <- data[-cv_data[[i]], ]
-    test_data[[i]] <- data[cv_data[[i]],]
+    test_data[[i]] <- data[cv_data[[i]], ]
     cv_stichprobe[[i]] <- ziehen_stichprobe(train_data[[i]])
-    for(para_option in 1:4){
-    para_data<- cv_stichprobe[[i]][[1]]$data
-    # para_data sind die Daten die unseren colsample und subsample entsprechen
-    f_iter <- mean(para_data$Y) # Startwert
-    itermax <- 100
-    improv_count <- 0
-    while(iter <= itermax && improv_count < 5){
-    para_data$neg_grad <- berechne_neg_grad(para_data,f_iter)
-    cart_modell <- schaetze_cart(para_data)
-    para_data$temp_res<- berechne_temp_residuen(para_data,cart_modell)
-    lmm_modell<- schaetze_lmm(para_data)
-    para_data$f_iter_act <- berechne_aktuelle_vorhersage(para_data,lmm_modell,f_iter)
-    rmse <- berechne_rmse(para_data)
-    iter <- iter+1
-    }
-    
+    for (para_option in 1:4) {
+      para_data <- cv_stichprobe[[i]][[para_option]]$data
+      # para_data sind die Daten die unseren colsample und subsample entsprechen
+      f_iter <- mean(para_data$Y) # Startwert
+      itermax <- 2
+      iter <- 1
+      improv_count <- 0
+      rmse <- NULL
+      while (iter <= itermax && improv_count < 5) {
+        para_data$neg_grad <- berechne_neg_grad(para_data, f_iter)
+        cart_modell <- schaetze_cart(para_data)
+        para_data$temp_res <- berechne_temp_residuen(para_data, cart_modell)
+        lmm_modell <- schaetze_lmm(para_data)
+        test_data[[i]]$f_iter_act <- berechne_aktuelle_vorhersage(test_data[[i]], lmm_modell, cart_modell, f_iter)
+        rmse[iter] <- berechne_rmse(test_data[[i]])
+        iter_alt <- iter - 1
+        if (rmse[iter] <= rmse[iter_alt]) {
+          improv_count <- improv_count + 1
+        }
+        iter <- iter + 1
+      }
+      
     }
     
   }
-  cv_stichprobe
-  
-  
-  
-  
+  rmse
 }
 
-cv_stichprobe[[1]][1]
+boostedrirt(sim_data)
 
 #-------------
 
@@ -283,7 +285,7 @@ cv_stichprobe[[1]]$data_1_1$data$neg_grad <- berechne_neg_grad(cv_stichprobe[[1]
 
 schaetze_cart <- function(data){
   rpart::rpart(neg_grad~.,data %>%
-  dplyr::select(-Y,-id))}
+  dplyr::select(-Y,-id,-temp_res))}
 
 cart_1 <- schaetze_cart(cv_stichprobe[[1]]$data_1_1$data)
 
@@ -303,17 +305,40 @@ lmer(formula = temp_res ~ 1 + (1|id), data = data_temp_res%>%
 
 schaetze_lmm <- function(data){
   lmer(formula = temp_res ~ 1 + (1|id), data = data%>%
-  dplyr::select(-Y, -neg_grad, -pred))
+  dplyr::select(-Y, -neg_grad))
 }
+
+
 
 lmm_iter <- schaetze_lmm(data_temp_res)
 
-berechne_aktuelle_vorhersage <- function(data,lmm_model, f_iter, alpha = 0.1){
+berechne_aktuelle_vorhersage <- function(data,lmm_model, f_iter,cart, alpha = 0.1){
   random_eff_id<- ranef(lmm_model)$id
   beta0<- fixef(lmm_model)[1]
   data$f_lmm_id<- random_eff_id[as.character(data$id),]
+  data$pred <- predict(cart,data)
   f_iter_act <- f_iter+ alpha *(data$pred - beta0+ data$f_lmm_id)
 }
+
+
+# Modell
+
+# berechne_aktuelle_vorhersage <- function(data,lmm_model, f_iter,cart, alpha = 0.1){
+#   random_eff_id<- ranef(lmm_model)$id
+#   beta0<- fixef(lmm_model)[1]
+#   data$f_lmm_id<- random_eff_id[as.character(data$id),]
+#   data$pred <- predict(cart,data)
+#   f_iter_act <- f_iter+ alpha *(data$pred - beta0+ data$f_lmm_id)
+# }
+
+# Vorhersage
+
+
+
+
+berechne_aktuelle_vorhersage(test_data[[1]], lmm_modell, cart_modell, f_iter)
+
+predict(cart_modell,test_data[[1]])
 
 data_f_iter <- berechne_aktuelle_vorhersage(data_temp_res,lmm_iter,f_iter)
 
@@ -330,3 +355,103 @@ rmse<- berechne_rmse(data_f_iter)
 cv_stichprobe[[1]][[1]]$data
 
 ```
+
+```{r}
+#boostedrirt <- function(data) {
+  #checking_inputs()
+  
+  # Erzeuge 5 - CV Daten
+  cv_data <- caret::createFolds(sim_data$Y, k = 5)
+  # Ziehe für alle CV Folds Stichproben
+  train_data <- NULL
+  test_data <- NULL
+  cv_stichprobe <- NULL
+  for (i in 1:5) {
+    train_data[[1]] <- sim_data[-cv_data[[1]], ]
+    test_data[[1]] <- sim_data[cv_data[[1]], ]
+    cv_stichprobe[[1]] <- ziehen_stichprobe(train_data[[1]])
+    for (para_option in 1:4) {
+      para_data <- cv_stichprobe[[1]][[1]]$data
+      para_data$temp_res <- rep(NA,nrow(para_data))
+      # para_data sind die Daten die unseren colsample und subsample entsprechen
+      f_iter <- mean(para_data$Y) # Startwert
+      itermax <- 100
+      rmse <- NULL
+      improv_count <- 0
+      iter <- 1
+      while (iter <= itermax && improv_count < 5) {
+        para_data$neg_grad <- berechne_neg_grad(para_data, f_iter)
+        cart_modell <- schaetze_cart(para_data)
+        #print(cart_modell)
+        para_data$temp_res <- berechne_temp_residuen(para_data, cart_modell)
+        lmm_modell <- schaetze_lmm(para_data)
+        test_data[[1]]$f_iter_act <- berechne_aktuelle_vorhersage(test_data[[1]], lmm_modell, f_iter,cart_modell)
+        f_iter <- mean(test_data[[1]]$f_iter_act)
+        rmse[iter] <- berechne_rmse(test_data[[1]])
+        if (iter > 1 && rmse[iter] >= rmse[iter - 1]) {
+          improv_count <- improv_count + 1}
+        print(iter)
+        iter <- iter + 1
+        
+        }
+        
+      }
+   try_data<- test_data[[1]]%>%
+     dplyr::select(-f_iter_act)
+    }
+    
+  }
+  rmse
+}
+try_data_2 <- test_data[[1]]
+
+try_data_2$vorhersage <- berechne_aktuelle_vorhersage(test_data[[1]],lmm_modell,f_iter,cart_modell)
+
+boostedrirt <- function(data) {
+  #checking_inputs()
+  
+  # Erzeuge 5 - CV Daten
+  cv_data <- caret::createFolds(data$Y, k = 5)
+  # Ziehe für alle CV Folds Stichproben
+  train_data <- NULL
+  test_data <- NULL
+  cv_stichprobe <- NULL
+  for (i in 1:5) {
+    train_data[[i]] <- data[-cv_data[[i]], ]
+    test_data[[i]] <- data[cv_data[[i]], ]
+    cv_stichprobe[[i]] <- ziehen_stichprobe(train_data[[i]])
+    for (para_option in 1:4) {
+      para_data <- cv_stichprobe[[i]][[para_option]]$data
+      para_data$temp_res <- rep(NA,nrow(para_data))
+      para_data$neg_grad <- rep(NA,nrow(para_data))
+      # para_data sind die Daten die unseren colsample und subsample entsprechen
+      f_iter <- mean(para_data$Y) # Startwert
+      itermax <- 100
+      rmse <- NULL
+      improv_count <- 0
+      iter <- 1
+      while (iter <= itermax && improv_count < 5) {
+        para_data$neg_grad <- berechne_neg_grad(para_data, f_iter)
+        cart_modell <- schaetze_cart(para_data)
+        #print(cart_modell)
+        para_data$temp_res <- berechne_temp_residuen(para_data, cart_modell)
+        lmm_modell <- schaetze_lmm(para_data)
+        test_data[[i]]$f_iter_act <- berechne_aktuelle_vorhersage(test_data[[i]], lmm_modell, f_iter,cart_modell)
+        f_iter <- mean(test_data[[i]]$f_iter_act)
+        rmse[[i]][iter] <- berechne_rmse(test_data[[i]])
+        if (iter > 1 && rmse[[i]][iter] >= rmse[[i]][iter - 1]) {
+          improv_count <- improv_count + 1}
+        print(iter)
+        iter <- iter + 1
+        
+        }
+        
+      }
+    
+  }
+  rmse
+}
+
+boostedrirt(sim_data)
+```
+
