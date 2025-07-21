@@ -170,44 +170,66 @@ head(sim_data)
 ```{r}
 
 
-ziehen_stichprobe <- function(data){
-  size_row <- nrow(data)*0.7
-  size_col <- (ncol(data)-1)*0.6
-  sample_row <- sample(nrow(data), size = size_row, replace = FALSE)
+# ziehen_stichprobe <- function(data){
+#   size_row <- nrow(data)*0.7
+#   size_col <- (ncol(data)-1)*0.6
+#   sample_row <- sample(nrow(data), size = size_row, replace = FALSE)
+#   #sample_col <- sample(ncol(data), size = size_col, replace = FALSE)
+#   
+#   preds <- setdiff(names(data), c("Y","id","neg_grad"))
+#   sample_col_pred <- sample(preds, size = size_col)
+#   sample_col <- c(c("Y","id","neg_grad"), sample_col_pred)
+#   
+#   stichprobe <- list()
+#   stichprobe$data_7_1 <- list(
+#     data = data[sample_row, ],
+#     subsample = 0.7,
+#     colsample = 1.0
+#   )
+# 
+#   stichprobe$data_1_1 <- list(
+#     data = data,
+#     subsample = 1.0,
+#     colsample = 1.0
+#   )
+# 
+#   stichprobe$data_1_6 <- list(
+#     data = data[, sample_col],
+#     subsample = 1.0,
+#     colsample = 0.6
+#   )
+# 
+#   stichprobe$data_7_6 <- list(
+#     data = data[sample_row, sample_col],
+#     subsample = 0.7,
+#     colsample = 0.6
+#   )
+# 
+#   stichprobe
+# }
+#   
+
+ziehen_stichprobe <- function(data, col_sample, sub_sample){
+  size_row <- nrow(data)*sub_sample
+  size_col <- (ncol(data)-3)*col_sample
+  if(sub_sample == 1){sample_row <- 1:nrow(data)
+  }else{
+  sample_row <- sample(nrow(data), size = size_row, replace = FALSE)}
+  
   #sample_col <- sample(ncol(data), size = size_col, replace = FALSE)
   
   preds <- setdiff(names(data), c("Y","id","neg_grad"))
   sample_col_pred <- sample(preds, size = size_col)
   sample_col <- c(c("Y","id","neg_grad"), sample_col_pred)
   
-  stichprobe <- list()
-  stichprobe$data_7_1 <- list(
-    data = data[sample_row, ],
-    subsample = 0.7,
-    colsample = 1.0
-  )
-
-  stichprobe$data_1_1 <- list(
-    data = data,
-    subsample = 1.0,
-    colsample = 1.0
-  )
-
-  stichprobe$data_1_6 <- list(
-    data = data[, sample_col],
-    subsample = 1.0,
-    colsample = 0.6
-  )
-
-  stichprobe$data_7_6 <- list(
+  
+  stichprobe <- list(
     data = data[sample_row, sample_col],
-    subsample = 0.7,
-    colsample = 0.6
+    subsample = sub_sample,
+    colsample = col_sample
   )
-
   stichprobe
 }
-  
 
 
 berechne_neg_grad <- function(data, f_iter){
@@ -218,7 +240,7 @@ berechne_neg_grad <- function(data, f_iter){
 
 schaetze_cart <- function(data){
   rpart::rpart(neg_grad~.,data %>%
-  dplyr::select(-Y,-id,-temp_res))}
+  dplyr::select(-Y,-id,-temp_res), maxdepth = 3)}
 
 
 berechne_temp_residuen <- function(data, cart){
@@ -351,7 +373,7 @@ boostedrirt <- function(data) {
   for (i in 1:5) {
     train_data[[i]] <- data[-cv_data[[i]], ]
     test_data[[i]] <- data[cv_data[[i]], ]
-    itermax <- 10
+    itermax <- 20
     
     f_train <- rep(mean(train_data[[i]]$Y), nrow(train_data[[i]]))
     f_test  <- rep(mean(train_data[[i]]$Y), nrow(test_data[[i]])) # Startwert
@@ -402,5 +424,88 @@ boostedrirt <- function(data) {
 
   
 rmse_1 <- boostedrirt(sim_data)
+```
+
+
+```{r}
+boostedrirt <- function(data) {
+  #checking_inputs()
+  rmse_results <- data.frame(
+  fold = integer(),
+  iter = integer(),
+  colsample = numeric(),
+  subsample = numeric(),
+  rmse_train = numeric(),
+  rmse_test = numeric()
+)
+  para_opt <- expand.grid(
+  subsample = c(1, 0.7),
+  colsample = c(1, 0.6)
+)
+  for (para in 1:nrow(para_opt)) {
+    sub_sam <- para_opt$subsample[para]
+    col_sam <- para_opt$colsample[para]
+    print(sub_sam)
+  # Erzeuge 5 - CV Daten
+  cv_data <- caret::createFolds(data$Y, k = 5)
+  # Ziehe für alle CV Folds Stichproben
+  train_data <- NULL
+  test_data <- NULL
+  cv_stichprobe <- NULL
+  rmse <- NULL
+  for (i in 1:5) {
+    train_data[[i]] <- data[-cv_data[[i]], ]
+    test_data[[i]] <- data[cv_data[[i]], ]
+    itermax <- 20
+    f_train <- rep(mean(train_data[[i]]$Y), nrow(train_data[[i]]))
+    f_test  <- rep(mean(train_data[[i]]$Y), nrow(test_data[[i]])) # Startwert
+    improv_count <- 0
+    iter <- 1
+    while (iter <= itermax && improv_count < 5) {
+      train_data[[i]]$neg_grad <- berechne_neg_grad(train_data[[i]], f_train)
+      cv_stichprobe[[i]] <- ziehen_stichprobe(train_data[[i]],sub_sample = sub_sam, col_sample = col_sam)
+      para_data <- cv_stichprobe[[i]]$data
+        
+        # para_data sind die Daten die unseren colsample und subsample entsprechen
+      para_data$temp_res <- rep(NA,nrow(para_data))
+        
+        cart_modell <- schaetze_cart(para_data)
+        # #print(cart_modell)
+        para_data$temp_res <- berechne_temp_residuen(para_data, cart_modell)
+        lmm_modell <- schaetze_lmm(para_data)
+        test_data[[i]]$f_iter_act <- berechne_aktuelle_vorhersage(test_data[[i]], lmm_modell, f_test, cart_modell)
+        train_data[[i]]$f_iter_act <- berechne_aktuelle_vorhersage(train_data[[i]], lmm_modell, f_train,cart_modell)
+        f_train <- train_data[[i]]$f_iter_act
+        rmse_test <- berechne_rmse(test_data[[i]])
+        rmse_train <- berechne_rmse(train_data[[i]])
+        #print(rmse_train)
+        rmse_results <- rbind(rmse_results,data.frame(
+          fold = i,
+          iter = iter,
+          colsample = col_sam,
+          subsample = sub_sam,
+          rmse_test = rmse_test,
+          rmse_train = rmse_train
+        ))
+
+        if (iter > 1 && rmse_test >= min(rmse_results[rmse_results$fold == i,]$rmse_test)) {
+          improv_count <- improv_count + 1}
+
+        #print(rmse_test)
+        iter <- iter + 1
+        
+      }
+
+    
+  }}
+  
+  return(rmse_results)
+  }
+
+  
+rmse_1 <- boostedrirt(sim_data)
+
+#
+
 ```
 ```
