@@ -242,6 +242,48 @@ berechne_rmse <- function(data){
   rmse
 }
 
+berechne_finales_model <- function(data, rmse_result) {
+  final_iter <- rmse_result[rmse_result$final_iter > 0, ]
+  agg_final_iter <- aggregate(rmse_test ~ colsample + subsample + final_iter,
+                              data = final_iter,
+                              FUN = mean)
+  final_parameter <- agg_final_iter[which.min(agg_final_iter$rmse_test), ]
+  final_col_sample <- final_parameter$colsample
+  final_sub_sample <- final_parameter$subsample
+  final_final_iter <- final_parameter$final_iter
+  gesamt_data <- data
+  
+  rmse_final <- data.frame(iter = integer(), rmse_gesamt = numeric())
+  f_gesamt <- rep(mean(gesamt_data$Y), nrow(gesamt_data))
+  for (j in 1:final_final_iter) {
+    gesamt_data$neg_grad <- berechne_neg_grad(gesamt_data, f_gesamt)
+    cv_stichprobe <- ziehen_stichprobe(gesamt_data,
+                                       sub_sample = final_sub_sample,
+                                       col_sample = final_col_sample)
+    para_data <- cv_stichprobe$data
+    
+    # para_data sind die Daten die unseren colsample und subsample entsprechen
+    para_data$temp_res <- rep(NA, nrow(para_data))
+    
+    cart_modell <- schaetze_cart(para_data)
+    # #print(cart_modell)
+    para_data$temp_res <- berechne_temp_residuen(para_data, cart_modell)
+    lmm_modell <- schaetze_lmm(para_data)
+    gesamt_data$f_iter_act <- berechne_aktuelle_vorhersage(gesamt_data, lmm_modell, f_gesamt, cart_modell)
+    f_gesamt <- gesamt_data$f_iter_act
+    f_residuen <- gesamt_data$Y-gesamt_data$f_iter_act
+    rmse_gesamt <- berechne_rmse(gesamt_data)
+    
+    if (j == final_final_iter) {
+            final_residuen <- f_residuen
+            final_predict <- f_gesamt
+        }
+    rmse_final <- rbind(rmse_final, data.frame(iter = j, rmse_gesamt = rmse_gesamt))
+  }
+  return(list(rmse_final = rmse_final,
+                residuen = final_residuen,
+                predict = final_predict))
+}
 
 ```
 
@@ -326,9 +368,10 @@ boostedrirt <- function(data) {
       }
 
     
-  }}
-  
-  return(rmse_results)
+  }} # Ende der Para Schleife
+  final_object<- berechne_finales_model(data,rmse_result = rmse_results)
+  class(final_object) <- "boosted_rirt"
+  return(final_object)
   }
 
   
@@ -337,51 +380,39 @@ rmse_1 <- boostedrirt(sim_data)
 #
 
 ```
+# Methoden
 ```{r}
-rmse_1[min(rmse_1$rmse_test),]
+print.boosted_rirt <- function(boosted_rirt_obj){
+  max_iter<- max(boosted_rirt_obj$rmse_final$iter)
+  final_rmse <- boosted_rirt_obj$rmse_final[boosted_rirt_obj$rmse_final$iter == max_iter,]$rmse_gesamt
+  cat("Anzahl der Iterationen:",max_iter,"\n")
+  cat("Finaler RMSE:", final_rmse,"\n")
+}
+print(rmse_1)
 
-
-
-
-
-berechne_finales_model <- function(data, rmse_result) {
-  final_iter <- rmse_result[rmse_result$final_iter > 0, ]
-  agg_final_iter <- aggregate(rmse_test ~ colsample + subsample + final_iter,
-                              data = final_iter,
-                              FUN = mean)
-  final_parameter <- agg_final_iter[which.min(agg_final_iter$rmse_test), ]
-  final_col_sample <- final_parameter$colsample
-  final_sub_sample <- final_parameter$subsample
-  final_final_iter <- final_parameter$final_iter
-  gesamt_data <- data
-  
-  rmse_final <- data.frame(iter = integer(), rmse_gesamt = numeric())
-  f_gesamt <- rep(mean(gesamt_data$Y), nrow(gesamt_data))
-  for (j in 1:final_final_iter) {
-    gesamt_data$neg_grad <- berechne_neg_grad(gesamt_data, f_gesamt)
-    cv_stichprobe <- ziehen_stichprobe(gesamt_data,
-                                       sub_sample = final_sub_sample,
-                                       col_sample = final_col_sample)
-    para_data <- cv_stichprobe$data
-    
-    # para_data sind die Daten die unseren colsample und subsample entsprechen
-    para_data$temp_res <- rep(NA, nrow(para_data))
-    
-    cart_modell <- schaetze_cart(para_data)
-    # #print(cart_modell)
-    para_data$temp_res <- berechne_temp_residuen(para_data, cart_modell)
-    lmm_modell <- schaetze_lmm(para_data)
-    gesamt_data$f_iter_act <- berechne_aktuelle_vorhersage(gesamt_data, lmm_modell, f_gesamt, cart_modell)
-    f_gesamt <- gesamt_data$f_iter_act
-    f_residuen <- gesamt_data$Y-gesamt_data$f_iter_act
-    rmse_gesamt <- berechne_rmse(gesamt_data)
-    
-    if(j == final_final_iter){
-      rmse_final$residuen <- f_residuen
-      rmse_final$predict <- f_gesamt}
-    rmse_final <- rbind(rmse_final, data.frame(iter = j, rmse_gesamt = rmse_gesamt))
-  }
+summary.boosted_rirt <- function(boosted_rirt_obj){
+  cat("  Residuen\n"
+      )
+  print(summary(boosted_rirt_obj$residuen))
+  ggplot2::ggplot(data.frame(residuen = boosted_rirt_obj$residuen), aes(sample = residuen))+
+  stat_qq()+
+  stat_qq_line(color = "red") +
+  labs(
+    title = "Q-Q-Plot der Residuen",
+    x = "Theoretische Quantile",
+    y = "Beobachtete Quantile"
+  ) +
+  theme_minimal()
 }
 
-berechne_finales_model(sim_data,rmse_1)
+
+
+```
+
+```{r}
+
+
+
+
+final_object <- berechne_finales_model(sim_data,rmse_1)
 ```
