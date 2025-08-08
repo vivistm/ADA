@@ -166,6 +166,71 @@ sim_data <- data.frame(
 head(sim_data)
 
 ```
+# New Data
+```{r}
+set.seed(321)  # neuer Seed
+
+# Parameter
+n_groups <- 40
+n_per_group <- 100
+n_total <- n_groups * n_per_group
+
+# ID-Variable
+id <- rep(1:n_groups, each = n_per_group)
+
+# Integer-Kovariaten
+X1 <- sample(1:10, n_total, replace = TRUE)
+X2 <- sample(0:20, n_total, replace = TRUE)
+X3 <- sample(1:5, n_total, replace = TRUE)
+X4 <- rpois(n_total, lambda = 4)
+X5 <- rbinom(n_total, size = 1, prob = 0.5)
+X6 <- sample(10:30, n_total, replace = TRUE)
+X7 <- sample(-10:10, n_total, replace = TRUE)
+X8 <- sample(0:3, n_total, replace = TRUE)
+X9 <- rpois(n_total, lambda = 2)
+X10 <- sample(1:100, n_total, replace = TRUE)
+
+# Gruppenspezifischer zufälliger Intercept
+group_intercepts <- rnorm(n_groups, mean = 4, sd = 2)
+random_intercepts <- group_intercepts[id]
+
+# Neue lineare Effektgrößen
+Y <- -2 +                   # anderer Grundwert
+  0.5*X1 +                 # kleinerer Effekt von X1
+  3*X2 +                   # viel größerer Effekt von X2
+  0.8*X3 +                 # mäßiger Effekt von X3
+  -0.5*X4 +                # negativer Effekt von X4
+  1*X5 +                   # schwächerer Effekt von X5
+  0.05*X6 +                # sehr kleiner Effekt von X6
+  2*X7 +                   # stärkerer Effekt von X7
+  -1*X8 +                  # X8 wirkt jetzt negativ
+  1.5*X9 +                 # größerer Einfluss von X9
+  0.005*X10 +              # fast kein Einfluss von X10
+  random_intercepts +     
+  rnorm(n_total, sd = 6)   # zufälliger Fehler etwas stärker
+
+# Alles in Data Frame
+sim_data_1 <- data.frame(
+  id = as.factor(id),
+  X1 = as.integer(X1),
+  X2 = as.integer(X2),
+  X3 = as.integer(X3),
+  X4 = as.integer(X4),
+  X5 = as.integer(X5),
+  X6 = as.integer(X6),
+  X7 = as.integer(X7),
+  X8 = as.integer(X8),
+  X9 = as.integer(X9),
+  X10 = as.integer(X10),
+  Y = Y
+)
+
+# Vorschau
+head(sim_data_1)
+
+
+```
+
 
 ```{r}
 
@@ -282,7 +347,11 @@ berechne_finales_model <- function(data, rmse_result) {
   }
   return(list(rmse_final = rmse_final,
                 residuen = final_residuen,
-                predict = final_predict))
+                predict = final_predict,
+              rmse_progress = rmse_result,
+              final_col_sample = final_col_sample,
+              final_sub_sample = final_sub_sample
+              ))
 }
 
 ```
@@ -395,7 +464,7 @@ summary.boosted_rirt <- function(boosted_rirt_obj){
       )
   print(summary(boosted_rirt_obj$residuen))
   ggplot2::ggplot(data.frame(residuen = boosted_rirt_obj$residuen), aes(sample = residuen))+
-  stat_qq()+
+  geom_qq()+
   stat_qq_line(color = "red") +
   labs(
     title = "Q-Q-Plot der Residuen",
@@ -404,6 +473,51 @@ summary.boosted_rirt <- function(boosted_rirt_obj){
   ) +
   theme_minimal()
 }
+summary(rmse_1)
+
+
+plot.boosted_rirt <- function(boosted_rirt_obj){
+  plot1 <- ggplot2::ggplot(data.frame(residuen= boosted_rirt_obj$residuen),aes(x = residuen))+
+  geom_histogram(aes(y =after_stat(density)))+
+  geom_density()+
+  labs(title="Histogramm der finalen Residuen mit Dichtekurve",
+       y= "Dichte",
+       x = "Residuen")+
+  theme_gray()
+  
+  opt_para <- data.frame(colsample = boosted_rirt_obj$final_col_sample, subsample = boosted_rirt_obj$final_sub_sample)
+  rmse_2 <- boosted_rirt_obj$rmse_progress
+rmse_best <- rmse_2[
+  rmse_2$colsample == opt_para$colsample &
+  rmse_2$subsample == opt_para$subsample, ]
+
+plot2 <- ggplot2::ggplot(rmse_best, aes(x = iter)) +
+  geom_line(aes(y = rmse_train, color = as.factor(fold), linetype = "Train")) +
+  geom_line(aes(y = rmse_test,  color = as.factor(fold), linetype = "Test")) +
+  labs(
+    title = "RMSE-Verlauf über Iterationen für alle Folds",
+    x = "Iteration",
+    y = "RMSE",
+    color = "Fold",
+    linetype = "Daten"
+  ) +
+  theme_gray()+
+  scale_x_continuous(breaks = seq(min(rmse_best$iter), max(rmse_best$iter), by = 1))
+
+print(plot1)
+print(plot2)
+  
+}
+
+plot(rmse_1)
+
+
+predict.boosted_rirt <- function(boosted_rirt_obj,newdata){}
+
+
+
+
+
 
 
 
