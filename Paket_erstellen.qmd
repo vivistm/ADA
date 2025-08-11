@@ -231,7 +231,7 @@ head(sim_data_1)
 
 ```
 
-
+# Funktionen
 ```{r}
 
 
@@ -279,9 +279,9 @@ schaetze_cart <- function(data){
   dplyr::select(-Y,-id,-temp_res), maxdepth = 3)}
 
 
-berechne_temp_residuen <- function(data, cart){
+berechne_temp_residuen <- function(data, cart, f_iter){
   data$pred <- predict(cart)
-  temp_res <- data$Y - data$pred
+  temp_res <- data$Y - (f_iter +data$pred)
   temp_res
 }
 
@@ -406,7 +406,7 @@ boostedrirt <- function(data) {
         
         cart_modell <- schaetze_cart(para_data)
         # #print(cart_modell)
-        para_data$temp_res <- berechne_temp_residuen(para_data, cart_modell)
+        para_data$temp_res <- berechne_temp_residuen(para_data, cart_modell, f_train)
         lmm_modell <- schaetze_lmm(para_data)
         test_data[[i]]$f_iter_act <- berechne_aktuelle_vorhersage(test_data[[i]], lmm_modell, f_test, cart_modell)
         train_data[[i]]$f_iter_act <- berechne_aktuelle_vorhersage(train_data[[i]], lmm_modell, f_train,cart_modell)
