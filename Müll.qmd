@@ -702,3 +702,93 @@ rmse_1 <- boostedrirt(sim_data)
 #  
 
 ```
+
+
+```{r}
+boostedrirt <- function(data) {
+  checking_inputs(data)
+  
+  rmse_results <- data.frame(
+  fold = integer(),
+  iter = integer(),
+  colsample = numeric(),
+  subsample = numeric(),
+  rmse_train = numeric(),
+  rmse_test = numeric(),
+  final_iter = integer()
+)
+  para_opt <- expand.grid(
+  subsample = c(1, 0.7),
+  colsample = c(1, 0.6)
+)
+  for (para in 1:nrow(para_opt)) {
+    sub_sam <- para_opt$subsample[para]
+    col_sam <- para_opt$colsample[para]
+    print(sub_sam)
+  # Erzeuge 5 - CV Daten
+  cv_data <- caret::createFolds(data$Y, k = 5)
+  # Ziehe für alle CV Folds Stichproben
+  train_data <- NULL
+  test_data <- NULL
+  cv_stichprobe <- NULL
+  rmse <- NULL
+  
+  for (i in 1:5) {
+    train_data[[i]] <- data[-cv_data[[i]], ]
+    test_data[[i]] <- data[cv_data[[i]], ]
+    itermax <- 20
+    f_train <- rep(mean(train_data[[i]]$Y), nrow(train_data[[i]]))
+    f_test  <- rep(mean(train_data[[i]]$Y), nrow(test_data[[i]])) # Startwert
+    iter_final <- 0
+    improv_count <- 0
+    iter <- 1
+    while (iter <= itermax && improv_count < 5) {
+      train_data[[i]]$neg_grad <- berechne_neg_grad(train_data[[i]], f_train)
+      cv_stichprobe[[i]] <- ziehen_stichprobe(train_data[[i]],sub_sample = sub_sam, col_sample = col_sam)
+      para_data <- cv_stichprobe[[i]]$data
+        
+        # para_data sind die Daten die unseren colsample und subsample entsprechen
+      para_data$temp_res <- rep(NA,nrow(para_data))
+        
+        cart_modell <- schaetze_cart(para_data)
+        # #print(cart_modell)
+        para_data$temp_res <- berechne_temp_residuen(para_data, cart_modell, f_train)
+        lmm_modell <- schaetze_lmm(para_data)
+        test_data[[i]]$f_iter_act <- berechne_aktuelle_vorhersage(test_data[[i]], lmm_modell, f_test, cart_modell)
+        train_data[[i]]$f_iter_act <- berechne_aktuelle_vorhersage(train_data[[i]], lmm_modell, f_train,cart_modell)
+        f_train <- train_data[[i]]$f_iter_act
+        rmse_test <- berechne_rmse(test_data[[i]])
+        rmse_train <- berechne_rmse(train_data[[i]])
+        #print(rmse_train)
+        
+        if (iter > 1 && rmse_test >= min(rmse_results[rmse_results$fold == i,]$rmse_test)) {
+          improv_count <- improv_count + 1}
+        if(improv_count == 5){iter_final <- iter -5}
+        if(iter == itermax){iter_final <- iter}
+        
+        rmse_results <- rbind(rmse_results,data.frame(
+          fold = i,
+          iter = iter,
+          colsample = col_sam,
+          subsample = sub_sam,
+          rmse_test = rmse_test,
+          rmse_train = rmse_train,
+          final_iter = iter_final
+        ))
+
+
+        #print(rmse_test)
+        iter <- iter + 1
+        
+      }
+
+    
+  }} # Ende der Para Schleife
+  final_object<- berechne_finales_model(data,rmse_result = rmse_results)
+  class(final_object) <- "boosted_rirt"
+  return(final_object)
+  }
+
+  
+rmse_1 <- boostedrirt(sim_data)
+```

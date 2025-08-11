@@ -49,7 +49,7 @@ checking_inputs <- function(datensatz){
 pacman::p_load(
   SAEforest, emdi, saeSim, ggplot2, tidyr, saeTrafo,
   dplyr, sae, furrr, rbenchmark, doParallel,
-  foreach, randomForest, future.apply, lme4, tidyverse, caret,checkmate
+  foreach, randomForest, future.apply, lme4, tidyverse, caret,checkmate, usethis, testthat 
 )
 ```
 
@@ -191,26 +191,27 @@ X9 <- rpois(n_total, lambda = 2)
 X10 <- sample(1:100, n_total, replace = TRUE)
 
 # Gruppenspezifischer zufälliger Intercept
-group_intercepts <- rnorm(n_groups, mean = 4, sd = 2)
+# Höhere Varianz, damit der Effekt im Modell "sichtbar" bleibt
+group_intercepts <- rnorm(n_groups, mean = 4, sd = 8)
 random_intercepts <- group_intercepts[id]
 
 # Neue lineare Effektgrößen
-Y <- -2 +                   # anderer Grundwert
-  0.5*X1 +                 # kleinerer Effekt von X1
-  3*X2 +                   # viel größerer Effekt von X2
-  0.8*X3 +                 # mäßiger Effekt von X3
-  -0.5*X4 +                # negativer Effekt von X4
-  1*X5 +                   # schwächerer Effekt von X5
-  0.05*X6 +                # sehr kleiner Effekt von X6
-  2*X7 +                   # stärkerer Effekt von X7
-  -1*X8 +                  # X8 wirkt jetzt negativ
-  1.5*X9 +                 # größerer Einfluss von X9
-  0.005*X10 +              # fast kein Einfluss von X10
+Y <- -2 +                   # Grundwert
+  0.5*X1 +                 
+  3*X2 +                   
+  0.8*X3 +                 
+  -0.5*X4 +                
+  1*X5 +                   
+  0.05*X6 +                
+  2*X7 +                   
+  -1*X8 +                  
+  1.5*X9 +                 
+  0.005*X10 +              
   random_intercepts +     
-  rnorm(n_total, sd = 6)   # zufälliger Fehler etwas stärker
+  rnorm(n_total, sd = 3)   # kleineres Residual-Rauschen
 
 # Alles in Data Frame
-sim_data_1 <- data.frame(
+sim_data <- data.frame(
   id = as.factor(id),
   X1 = as.integer(X1),
   X2 = as.integer(X2),
@@ -226,7 +227,7 @@ sim_data_1 <- data.frame(
 )
 
 # Vorschau
-head(sim_data_1)
+head(sim_data)
 
 
 ```
@@ -262,7 +263,8 @@ ziehen_stichprobe <- function(data, col_sample, sub_sample){
   stichprobe <- list(
     data = data[sample_row, sample_col],
     subsample = sub_sample,
-    colsample = col_sample
+    colsample = col_sample,
+    sample_indicies = sample_row
   )
   stichprobe
 }
@@ -326,13 +328,14 @@ berechne_finales_model <- function(data, rmse_result) {
                                        sub_sample = final_sub_sample,
                                        col_sample = final_col_sample)
     para_data <- cv_stichprobe$data
+  
     
     # para_data sind die Daten die unseren colsample und subsample entsprechen
     para_data$temp_res <- rep(NA, nrow(para_data))
     
     cart_modell <- schaetze_cart(para_data)
     # #print(cart_modell)
-    para_data$temp_res <- berechne_temp_residuen(para_data, cart_modell)
+    para_data$temp_res <- berechne_temp_residuen(para_data, cart_modell, f_gesamt[cv_stichprobe$sample_indicies])
     lmm_modell <- schaetze_lmm(para_data)
     gesamt_data$f_iter_act <- berechne_aktuelle_vorhersage(gesamt_data, lmm_modell, f_gesamt, cart_modell)
     f_gesamt <- gesamt_data$f_iter_act
@@ -354,11 +357,19 @@ berechne_finales_model <- function(data, rmse_result) {
               ))
 }
 
+
+
+
+
 ```
 
 
 # Aktuell
 ```{r}
+
+
+#
+
 boostedrirt <- function(data) {
   checking_inputs(data)
   
@@ -386,7 +397,7 @@ boostedrirt <- function(data) {
   test_data <- NULL
   cv_stichprobe <- NULL
   rmse <- NULL
-  
+  random_intercepts_list <- vector("list", length = 5)
   for (i in 1:5) {
     train_data[[i]] <- data[-cv_data[[i]], ]
     test_data[[i]] <- data[cv_data[[i]], ]
@@ -405,11 +416,15 @@ boostedrirt <- function(data) {
       para_data$temp_res <- rep(NA,nrow(para_data))
         
         cart_modell <- schaetze_cart(para_data)
-        # #print(cart_modell)
-        para_data$temp_res <- berechne_temp_residuen(para_data, cart_modell, f_train)
+        #cat(length(f_train),nrow(f_train[cv_stichprobe[[i]]$sample_indicies]))
+        para_data$temp_res <- berechne_temp_residuen(para_data, cart_modell, f_train[cv_stichprobe[[i]]$sample_indicies])
         lmm_modell <- schaetze_lmm(para_data)
+        random_intercepts_list[[i]][[iter]] <- ranef(lmm_modell)$id * 0.1
+        
+        #cat(nrow(test_data[[i]]),length(f_test))
         test_data[[i]]$f_iter_act <- berechne_aktuelle_vorhersage(test_data[[i]], lmm_modell, f_test, cart_modell)
-        train_data[[i]]$f_iter_act <- berechne_aktuelle_vorhersage(train_data[[i]], lmm_modell, f_train,cart_modell)
+        #cat(nrow(train_data[[i]]),length(f_train))
+        train_data[[i]]$f_iter_act <- berechne_aktuelle_vorhersage(train_data[[i]], lmm_modell, f_train,cart_modell) # Aber müsste hier nicht paradata verwendet werden oder train?
         f_train <- train_data[[i]]$f_iter_act
         rmse_test <- berechne_rmse(test_data[[i]])
         rmse_train <- berechne_rmse(train_data[[i]])
@@ -439,14 +454,12 @@ boostedrirt <- function(data) {
     
   }} # Ende der Para Schleife
   final_object<- berechne_finales_model(data,rmse_result = rmse_results)
+  final_object$random_intercept <- random_intercepts_list
   class(final_object) <- "boosted_rirt"
   return(final_object)
-  }
+}
 
-  
 rmse_1 <- boostedrirt(sim_data)
-
-#
 
 ```
 # Methoden
