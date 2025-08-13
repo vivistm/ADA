@@ -4,7 +4,7 @@ author: "Vivian Stehmans"
 format: html
 editor: visual
 ---
-
+# Pseudo Code
 ```{r}
 
 # Input: Datensatz
@@ -12,14 +12,76 @@ editor: visual
 # - Kovariablen (Integer) (mehr als Y und id)
 # - id Variable
 
-algorithmus <- function(datensatz){
+boostedrirt <- function(datensatz){
   
   checking_inputs(datensatz)
   # unabhängige Variable Y im Datensatz
   # eine id Variable
   # integer Kovariate mit p>0
   
-  cv_datensatz <- aufteilen_daten
+  
+  para_opt # <- Erstellen vom Parametergrid für Parametertuning
+  for (para in 1:nrow(para_opt)) { # Iterieren über Tuningparameter
+     
+  cv_data <- cv_ziehen(datensatz) #Crossvalidation Folds ziehen
+  for (i in 1:5){ # Iterieren über Cross-Folds
+    f_iter # Schritt 1: f_0 für iter = 1
+    while (iter <= itermax && improv_count < 5){ # Schritt 2: adaptierter EM Algorithmus
+      
+            train_data[[i]]$neg_grad <- berechne_neg_grad(train_data[[i]], f_train)
+      cv_stichprobe[[i]] <- ziehen_stichprobe(train_data[[i]],sub_sample = sub_sam, col_sample = col_sam)
+      para_data <- cv_stichprobe[[i]]$data
+        
+        # para_data sind die Daten die unseren colsample und subsample entsprechen
+      para_data$temp_res <- rep(NA,nrow(para_data))
+        
+        cart_modell <- schaetze_cart(para_data)
+        #cat(length(f_train),nrow(f_train[cv_stichprobe[[i]]$sample_indicies]))
+        para_data$temp_res <- berechne_temp_residuen(para_data, cart_modell, f_train[cv_stichprobe[[i]]$sample_indicies])
+        lmm_modell <- schaetze_lmm(para_data)
+        random_intercepts_list[[i]][[iter]] <- ranef(lmm_modell)$id * 0.1
+        
+        #cat(nrow(test_data[[i]]),length(f_test))
+        test_data[[i]]$f_iter_act <- berechne_aktuelle_vorhersage(test_data[[i]], lmm_modell, f_test, cart_modell)
+        #cat(nrow(train_data[[i]]),length(f_train))
+        train_data[[i]]$f_iter_act <- berechne_aktuelle_vorhersage(train_data[[i]], lmm_modell, f_train,cart_modell) # Aber müsste hier nicht paradata verwendet werden oder train?
+        f_train <- train_data[[i]]$f_iter_act
+        rmse_test <- berechne_rmse(test_data[[i]])
+        rmse_train <- berechne_rmse(train_data[[i]])
+        #print(rmse_train)
+        
+        if (iter > 1 && rmse_test >= min(rmse_results[rmse_results$fold == i,]$rmse_test)) {
+          improv_count <- improv_count + 1}
+        if(improv_count == 5){iter_final <- iter -5}
+        if(iter == itermax){iter_final <- iter}
+        
+        rmse_results <- rbind(rmse_results,data.frame(
+          fold = i,
+          iter = iter,
+          colsample = col_sam,
+          subsample = sub_sam,
+          rmse_test = rmse_test,
+          rmse_train = rmse_train,
+          final_iter = iter_final
+        ))
+
+
+        #print(rmse_test)
+        iter <- iter + 1
+        
+      }
+
+    
+  }} # Ende der Para Schleife
+  final_object<- berechne_finales_model(data,rmse_result = rmse_results)
+  final_object$random_intercept <- random_intercepts_list
+  class(final_object) <- "boosted_rirt"
+  return(final_object)
+}
+
+      
+  }
+  
   
   
   final_parameter <- trainings_algorithmus(cv_datensatz, tuning_parameter_grid)
@@ -166,7 +228,9 @@ sim_data <- data.frame(
 head(sim_data)
 
 ```
+
 # New Data
+
 ```{r}
 set.seed(321)  # neuer Seed
 
@@ -233,6 +297,7 @@ head(sim_data)
 ```
 
 # Funktionen
+
 ```{r}
 
 
@@ -363,8 +428,8 @@ berechne_finales_model <- function(data, rmse_result) {
 
 ```
 
-
 # Aktuell
+
 ```{r}
 
 
@@ -389,7 +454,6 @@ boostedrirt <- function(data) {
   for (para in 1:nrow(para_opt)) {
     sub_sam <- para_opt$subsample[para]
     col_sam <- para_opt$colsample[para]
-    print(sub_sam)
   # Erzeuge 5 - CV Daten
   cv_data <- caret::createFolds(data$Y, k = 5)
   # Ziehe für alle CV Folds Stichproben
@@ -401,7 +465,7 @@ boostedrirt <- function(data) {
   for (i in 1:5) {
     train_data[[i]] <- data[-cv_data[[i]], ]
     test_data[[i]] <- data[cv_data[[i]], ]
-    itermax <- 20
+    itermax <- 100
     f_train <- rep(mean(train_data[[i]]$Y), nrow(train_data[[i]]))
     f_test  <- rep(mean(train_data[[i]]$Y), nrow(test_data[[i]])) # Startwert
     iter_final <- 0
@@ -462,7 +526,9 @@ boostedrirt <- function(data) {
 rmse_1 <- boostedrirt(sim_data)
 
 ```
+
 # Methoden
+
 ```{r}
 print.boosted_rirt <- function(boosted_rirt_obj){
   max_iter<- max(boosted_rirt_obj$rmse_final$iter)
